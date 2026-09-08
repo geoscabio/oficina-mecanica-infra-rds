@@ -24,9 +24,7 @@ As branches protegidas são `develop`, `release`, `release/*` e `main`. A govern
 
 | Workflow | Responsabilidade |
 | --- | --- |
-| `🧪 CI Development` | Valida PR para `develop`, Git Flow e Terraform. |
-| `🔎 CI Release` | Valida PR para `release` e `release/**`. |
-| `🛡️ CI Production` | Valida PR para `main`. |
+| `🧪 CI` | Workflow único para PR e push em `develop`, `release`, `release/**` e `main`; valida código e Git Flow. |
 | `🚀 CD Development` | Detecta mudanças de Terraform, chama o deploy AWS e pode abrir PR para release. |
 | `☁️ AWS Deploy` | Resolve `apply`/`destroy`, planeja, aplica e verifica AWS/SSM. |
 | `🔀 CD Release` | Registra o deploy lógico em homologation e pode abrir PR para main. |
@@ -81,3 +79,23 @@ Para gerar plano, configure credenciais AWS e as variáveis `TF_VAR_db_username`
 infra-vpc -> infra-rds
              -> infra-kubernetes -> api
 ```
+
+### CI única e progressão do CD
+
+O arquivo `.github/workflows/ci.yml` concentra a integração contínua. O mesmo
+workflow valida cada PR e o commit resultante do merge; não existe uma CI por
+ambiente. O CD aguarda uma execução `push` aprovada desse workflow, do mesmo
+repositório, branch e SHA. Falha, cancelamento, ausência ou timeout bloqueiam a entrega.
+Os nomes dos checks obrigatórios existentes foram preservados.
+
+Somente Markdown pode dispensar validações pesadas. Arquivos executáveis em `docs/`
+também passam pela CI. A concorrência da CI cancela validações antigas; a do CD
+preserva a execução em andamento para não interromper Terraform.
+
+`development` é o ambiente físico. `release` e `main` registram homologação e
+produção lógicas, conforme ADR-0010, sem provisionar outros ambientes AWS.
+A promoção automática para `release` exige deploy físico concluído com sucesso;
+mudanças sem deploy não são apresentadas como um deploy validado. Merges e
+aprovações continuam humanos. Nenhum workflow aprova ou faz merge de PR.
+
+Veja a [auditoria de CI/CD](docs/auditoria-ci-cd.md) para verificações e limitações.
