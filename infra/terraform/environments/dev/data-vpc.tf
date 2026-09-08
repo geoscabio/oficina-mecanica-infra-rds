@@ -12,7 +12,7 @@ resource "terraform_data" "vpc_ready" {
 
   lifecycle {
     precondition {
-      condition     = self.input == "ready"
+      condition     = data.aws_ssm_parameter.vpc_status.value == "ready"
       error_message = "A VPC precisa estar pronta no SSM antes do apply do RDS."
     }
   }
