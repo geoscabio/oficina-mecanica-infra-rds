@@ -762,6 +762,19 @@ Antes de considerar PR pronto:
 
 Não considerar "mergeable" como sinônimo de correto.
 
+## 28.1 APRESENTAÇÃO DO PR
+
+O corpo do PR é uma entrega para leitura humana. Antes de publicar:
+
+* comparar com PRs maduros das esteiras VPC e Kubernetes;
+* usar Markdown renderizado de verdade, com linhas em branco entre seções e listas;
+* usar títulos claros como `## 🎯 Objetivo`, `## 🔧 Alterações principais`, `## 🏗️ Impacto arquitetural`, `## 🧪 Validações` e `## 📝 Observações` quando aplicáveis;
+* usar emojis de forma intencional nos títulos e nos elementos de fluxo, nunca como ruído em cada bullet;
+* preservar português brasileiro, acentuação e termos técnicos corretos;
+* informar apenas validações realmente executadas e operações AWS que não foram executadas.
+
+Ao criar ou editar o corpo por CLI, escrever o Markdown em arquivo UTF-8 e usar a opção de arquivo da ferramenta. Nunca passar sequências `\\n` como texto literal em um argumento de shell.
+
 ---
 
 # 29. RULESETS
