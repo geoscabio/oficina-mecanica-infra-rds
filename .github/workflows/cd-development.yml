@@ -1,0 +1,18 @@
+name: "🚀 CD Development"
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_apply:
+        description: "Confirme apply explicitamente"
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  guardrail:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          test "${{ inputs.confirm_apply }}" = "true" || { echo "Apply não confirmado."; exit 1; }
+          echo "Guardrail aprovado; o deploy AWS será implementado após revisão do contrato RDS."
