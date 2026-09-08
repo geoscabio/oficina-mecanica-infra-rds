@@ -775,6 +775,20 @@ O corpo do PR é uma entrega para leitura humana. Antes de publicar:
 
 Ao criar ou editar o corpo por CLI, escrever o Markdown em arquivo UTF-8 e usar a opção de arquivo da ferramenta. Nunca passar sequências `\\n` como texto literal em um argumento de shell.
 
+## 28.2 AUTOMAÇÃO DAS PROMOÇÕES
+
+No Git Flow das esteiras, somente o PR da branch de trabalho para `develop` deve ser aberto manualmente.
+
+Após o deploy físico em `development` terminar integralmente com sucesso:
+
+* o CD deve abrir automaticamente o PR `develop -> release`;
+* após o merge em `release`, o CD deve abrir automaticamente o PR `release -> main`;
+* nenhum PR de promoção deve ser aberto após falha do deploy ou de sua validação;
+* os merges e as aprovações continuam humanos e sujeitos aos rulesets;
+* nenhum workflow pode executar autoaprovação.
+
+Para essa automação, verificar no bootstrap do repositório a configuração acoplada do GitHub **Allow GitHub Actions to create and approve pull requests**. A habilitação autoriza tecnicamente criação e aprovação, portanto exige autorização explícita do usuário e os workflows devem usar apenas a criação de PR. Preservar rulesets que exijam aprovação de outra pessoa e nunca adicionar comandos de aprovação ao workflow.
+
 ---
 
 # 29. RULESETS
