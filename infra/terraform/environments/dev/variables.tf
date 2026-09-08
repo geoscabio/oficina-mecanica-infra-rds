@@ -8,7 +8,7 @@ variable "environment" {
 }
 variable "db_name" {
   type    = string
-  default = "oficina-mecanica-rds-dev"
+  default = "oficina-mecanica-db-dev"
 }
 variable "db_instance_class" {
   type    = string
@@ -20,7 +20,7 @@ variable "db_allocated_storage" {
 }
 variable "db_engine_version" {
   type    = string
-  default = "15.00.4420.2.v1"
+  default = "16.00.4185.3.v1"
 }
 variable "db_username" {
   type      = string

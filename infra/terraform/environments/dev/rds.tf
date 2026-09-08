@@ -9,6 +9,14 @@ resource "aws_security_group" "rds" {
   description = "Acesso ao RDS da Oficina Mecanica"
   vpc_id      = data.aws_ssm_parameter.vpc_id.value
   tags        = local.common_tags
+
+  ingress {
+    description = "SQL Server somente pela rede privada da VPC"
+    from_port   = 1433
+    to_port     = 1433
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.11.0/24", "10.0.12.0/24"]
+  }
 }
 
 resource "aws_db_instance" "this" {
@@ -17,6 +25,7 @@ resource "aws_db_instance" "this" {
   engine_version         = var.db_engine_version
   instance_class         = var.db_instance_class
   allocated_storage      = var.db_allocated_storage
+  storage_encrypted      = true
   username               = var.db_username
   password               = var.db_password
   port                   = 1433
