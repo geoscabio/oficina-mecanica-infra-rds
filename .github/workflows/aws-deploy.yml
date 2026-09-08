@@ -1,0 +1,204 @@
+name: "☁️ AWS Deploy"
+run-name: "☁️ Executar deploy AWS do RDS em ${{ inputs.environment_name }}"
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        description: "GitHub Environment usado pelo deploy."
+        required: true
+        type: string
+    outputs:
+      terraform_action:
+        description: "Ação resolvida: apply ou destroy."
+        value: ${{ jobs.resolve_action.outputs.terraform_action }}
+
+env:
+  TF_WORKING_DIRECTORY: infra/terraform/environments/dev
+  TERRAFORM_VERSION: "1.15.8"
+  SSM_VPC_PREFIX: /oficina-mecanica/development/vpc
+  SSM_VPC_STATUS_PARAMETER: /oficina-mecanica/development/status/vpc
+  SSM_RDS_PREFIX: /oficina-mecanica/development/rds
+  SSM_RDS_STATUS_PARAMETER: /oficina-mecanica/development/status/rds
+
+jobs:
+  resolve_action:
+    name: "🔎 01 · Resolver ação do Terraform"
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment_name }}
+    outputs:
+      terraform_action: ${{ steps.resolve.outputs.terraform_action }}
+    steps:
+      - name: "📥 01 · Baixar código do repositório"
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: "🚦 02 · Ler terraform-action.env e proteger destroy"
+        id: resolve
+        env:
+          GITHUB_BEFORE: ${{ github.event.before }}
+          GITHUB_AFTER: ${{ github.sha }}
+        run: |
+          control_file="$TF_WORKING_DIRECTORY/terraform-action.env"
+          terraform_action="$(grep -E '^[[:space:]]*TERRAFORM_ACTION[[:space:]]*=' "$control_file" | tail -n 1 | cut -d '=' -f 2- | tr -d '\r' | xargs)"
+          case "$terraform_action" in
+            apply|destroy) ;;
+            *) echo "::error::TERRAFORM_ACTION inválido. Use apply ou destroy."; exit 1 ;;
+          esac
+          if [ "$terraform_action" = "destroy" ]; then
+            if [ -z "$GITHUB_BEFORE" ] || [ "$GITHUB_BEFORE" = "0000000000000000000000000000000000000000" ] || ! git diff --name-only "$GITHUB_BEFORE" "$GITHUB_AFTER" -- "$control_file" | grep -qx "$control_file"; then
+              echo "::error::Destroy exige alteração dedicada em terraform-action.env neste push."
+              exit 1
+            fi
+            echo "::warning::O RDS será destruído nesta execução."
+          fi
+          echo "terraform_action=$terraform_action" >> "$GITHUB_OUTPUT"
+
+  plan:
+    name: "📋 02 · Validar dependências e gerar plano"
+    needs: resolve_action
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment_name }}
+    outputs:
+      db_identifier_before_destroy: ${{ steps.destroy_context.outputs.db_identifier }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      DB_USERNAME: ${{ secrets.DB_USERNAME }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      TERRAFORM_ACTION: ${{ needs.resolve_action.outputs.terraform_action }}
+    steps:
+      - name: "📥 01 · Baixar código do repositório"
+        uses: actions/checkout@v7
+      - name: "🔑 02 · Configurar credenciais AWS"
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: "🛠️ 03 · Instalar Terraform"
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: "🚦 04 · Validar dependência da VPC"
+        if: env.TERRAFORM_ACTION == 'apply'
+        run: |
+          test "$DB_USERNAME" != "" && test "$DB_PASSWORD" != "" || { echo "::error::Configure os secrets DB_USERNAME e DB_PASSWORD no Environment."; exit 1; }
+          test "$(aws ssm get-parameter --name "$SSM_VPC_STATUS_PARAMETER" --query 'Parameter.Value' --output text)" = "ready" || { echo "::error::A VPC não está pronta."; exit 1; }
+          test -n "$(aws ssm get-parameter --name "$SSM_VPC_PREFIX/vpc_id" --query 'Parameter.Value' --output text)"
+          test -n "$(aws ssm get-parameter --name "$SSM_VPC_PREFIX/private_subnet_ids" --query 'Parameter.Value' --output text)"
+      - name: "📦 05 · Restaurar state Terraform"
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
+          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
+          restore-keys: tfstate-rds-${{ inputs.environment_name }}-
+      - name: "📝 06 · Escrever variáveis efêmeras"
+        run: |
+          umask 077
+          jq -n --arg aws_region "$AWS_REGION" --arg db_username "$DB_USERNAME" --arg db_password "$DB_PASSWORD" '{aws_region:$aws_region,db_username:$db_username,db_password:$db_password}' > "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"
+      - name: "🚀 07 · Inicializar e validar Terraform"
+        run: |
+          terraform -chdir="$TF_WORKING_DIRECTORY" init -input=false
+          terraform -chdir="$TF_WORKING_DIRECTORY" validate
+      - name: "🛡️ 08 · Capturar RDS antes do destroy"
+        id: destroy_context
+        if: env.TERRAFORM_ACTION == 'destroy'
+        run: |
+          identifier="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw rds_identifier 2>/dev/null || true)"
+          echo "db_identifier=$identifier" >> "$GITHUB_OUTPUT"
+      - name: "📐 09 · Gerar plano Terraform sem publicar segredos"
+        run: |
+          if [ "$TERRAFORM_ACTION" = "destroy" ]; then
+            terraform -chdir="$TF_WORKING_DIRECTORY" plan -destroy -input=false
+          else
+            terraform -chdir="$TF_WORKING_DIRECTORY" plan -input=false
+          fi
+      - name: "🧹 10 · Remover variáveis efêmeras"
+        if: always()
+        run: rm -f "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"
+
+  apply_or_destroy:
+    name: "☁️ 03 · Aplicar ou destruir RDS"
+    needs: [resolve_action, plan]
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment_name }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      DB_USERNAME: ${{ secrets.DB_USERNAME }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      TERRAFORM_ACTION: ${{ needs.resolve_action.outputs.terraform_action }}
+      DB_IDENTIFIER_BEFORE_DESTROY: ${{ needs.plan.outputs.db_identifier_before_destroy }}
+    steps:
+      - name: "📥 01 · Baixar código do repositório"
+        uses: actions/checkout@v7
+      - name: "🔑 02 · Configurar credenciais AWS"
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: "🛠️ 03 · Instalar Terraform"
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: "📦 04 · Restaurar state Terraform"
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
+          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
+          restore-keys: tfstate-rds-${{ inputs.environment_name }}-
+      - name: "📝 05 · Escrever variáveis efêmeras"
+        run: |
+          umask 077
+          jq -n --arg aws_region "$AWS_REGION" --arg db_username "$DB_USERNAME" --arg db_password "$DB_PASSWORD" '{aws_region:$aws_region,db_username:$db_username,db_password:$db_password}' > "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"
+      - name: "🚀 06 · Inicializar, planejar e aplicar"
+        run: |
+          terraform -chdir="$TF_WORKING_DIRECTORY" init -input=false
+          if [ "$TERRAFORM_ACTION" = "destroy" ]; then
+            terraform -chdir="$TF_WORKING_DIRECTORY" plan -destroy -input=false -out=tfplan
+          else
+            terraform -chdir="$TF_WORKING_DIRECTORY" plan -input=false -out=tfplan
+          fi
+          terraform -chdir="$TF_WORKING_DIRECTORY" apply -input=false -auto-approve tfplan
+      - name: "💾 07 · Salvar state Terraform"
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
+          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
+      - name: "🔎 08 · Validar RDS e SSM após apply"
+        if: env.TERRAFORM_ACTION == 'apply'
+        run: |
+          identifier="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw rds_identifier)"
+          endpoint="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw rds_endpoint)"
+          test "$(aws rds describe-db-instances --db-instance-identifier "$identifier" --query 'DBInstances[0].DBInstanceStatus' --output text)" = "available"
+          test "$(aws rds describe-db-instances --db-instance-identifier "$identifier" --query 'DBInstances[0].Endpoint.Address' --output text)" = "$endpoint"
+          test "$(aws ssm get-parameter --name "$SSM_RDS_PREFIX/endpoint" --query 'Parameter.Value' --output text)" = "$endpoint"
+          test "$(aws ssm get-parameter --name "$SSM_RDS_STATUS_PARAMETER" --query 'Parameter.Value' --output text)" = "ready"
+      - name: "🔎 08 · Validar remoção real após destroy"
+        if: env.TERRAFORM_ACTION == 'destroy'
+        run: |
+          if [ -n "$DB_IDENTIFIER_BEFORE_DESTROY" ] && aws rds describe-db-instances --db-instance-identifier "$DB_IDENTIFIER_BEFORE_DESTROY" >/dev/null 2>&1; then
+            echo "::error::A instância RDS ainda existe."; exit 1
+          fi
+          for parameter_name in "$SSM_RDS_PREFIX/endpoint" "$SSM_RDS_PREFIX/security_group_id" "$SSM_RDS_STATUS_PARAMETER"; do
+            if aws ssm get-parameter --name "$parameter_name" >/dev/null 2>&1; then
+              echo "::error::O parâmetro $parameter_name ainda existe."; exit 1
+            fi
+          done
+      - name: "🧹 09 · Remover variáveis efêmeras"
+        if: always()
+        run: rm -f "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"

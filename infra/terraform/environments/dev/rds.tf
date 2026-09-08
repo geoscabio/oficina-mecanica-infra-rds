@@ -15,25 +15,26 @@ resource "aws_security_group" "rds" {
     from_port   = 1433
     to_port     = 1433
     protocol    = "tcp"
-    cidr_blocks = ["10.0.11.0/24", "10.0.12.0/24"]
+    cidr_blocks = local.private_subnet_cidrs
   }
 }
 
 resource "aws_db_instance" "this" {
-  identifier             = var.db_name
-  engine                 = "sqlserver-ex"
-  engine_version         = var.db_engine_version
-  instance_class         = var.db_instance_class
-  allocated_storage      = var.db_allocated_storage
-  storage_encrypted      = true
-  username               = var.db_username
-  password               = var.db_password
-  port                   = 1433
-  db_subnet_group_name   = aws_db_subnet_group.this.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false
-  skip_final_snapshot    = true
-  deletion_protection    = false
-  tags                   = local.common_tags
-  depends_on             = [terraform_data.vpc_ready]
+  identifier              = var.db_name
+  engine                  = "sqlserver-ex"
+  engine_version          = var.db_engine_version
+  instance_class          = var.db_instance_class
+  allocated_storage       = var.db_allocated_storage
+  backup_retention_period = 0
+  storage_encrypted       = true
+  username                = var.db_username
+  password                = var.db_password
+  port                    = 1433
+  db_subnet_group_name    = aws_db_subnet_group.this.name
+  vpc_security_group_ids  = [aws_security_group.rds.id]
+  publicly_accessible     = false
+  skip_final_snapshot     = true
+  deletion_protection     = false
+  tags                    = local.common_tags
+  depends_on              = [terraform_data.vpc_ready]
 }
