@@ -1,4 +1,5 @@
-name: "🧪 CI RDS"
+name: "🧪 CI Development"
+run-name: "🧪 Validar PR para develop"
 on:
   pull_request:
     branches: [develop, release, main]
