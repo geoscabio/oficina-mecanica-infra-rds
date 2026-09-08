@@ -5,6 +5,17 @@ on:
 permissions:
   contents: read
 jobs:
+  git_flow:
+    name: "🔀 01 · Validar fluxo de branches"
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          case "${{ github.base_ref }}:${{ github.head_ref }}" in
+            develop:main|develop:release|develop:release/*) exit 1;;
+            release:develop|release/*:develop|main:release|main:release/*) exit 0;;
+            develop:*) exit 0;;
+            *) exit 1;;
+          esac
   terraform:
     name: "🌐 Validar Terraform do RDS"
     runs-on: ubuntu-latest
@@ -17,3 +28,9 @@ jobs:
       - run: terraform fmt -check -recursive infra/terraform
       - run: terraform -chdir=infra/terraform/environments/dev init -backend=false -input=false
       - run: terraform -chdir=infra/terraform/environments/dev validate
+  quality_gate:
+    name: "🚦 03 · Quality gate"
+    needs: [git_flow, terraform]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Git Flow e Terraform validados."
