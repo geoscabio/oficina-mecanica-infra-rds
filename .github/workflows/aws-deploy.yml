@@ -110,8 +110,12 @@ jobs:
         id: destroy_context
         if: env.TERRAFORM_ACTION == 'destroy'
         run: |
-          identifier="$(terraform -chdir="$TF_WORKING_DIRECTORY" console -no-color <<< 'var.db_name' | tr -d '"')"
-          test -n "$identifier" || { echo "::error::Identificador do RDS não encontrado na configuração."; exit 1; }
+          set -euo pipefail
+          identifier="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -json | jq -r '.rds_identifier.value // empty')"
+          if [ -z "$identifier" ]; then
+            identifier="$(terraform -chdir="$TF_WORKING_DIRECTORY" console -no-color <<< 'var.db_name' | tr -d '"')"
+          fi
+          test -n "$identifier" || { echo "::error::Identificador do RDS não encontrado."; exit 1; }
           echo "db_identifier=$identifier" >> "$GITHUB_OUTPUT"
       - name: "📐 09 · Apresentar prévia (não é o plano aplicado)"
         run: |
