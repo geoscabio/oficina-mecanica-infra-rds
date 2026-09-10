@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: "🚦 02 · Ler terraform-action.env e proteger destroy"
+      - name: "🚦 02 · Ler terraform-action.env e validar troca segura de destroy"
         id: resolve
         env:
           GITHUB_BEFORE: ${{ github.event.before }}
@@ -56,7 +56,7 @@ jobs:
           echo "terraform_action=$terraform_action" >> "$GITHUB_OUTPUT"
 
   plan:
-    name: "📋 02 · Validar dependências e apresentar prévia"
+    name: "📋 02 · Preparar variáveis e gerar plano do Terraform"
     needs: resolve_action
     runs-on: ubuntu-latest
     environment:
@@ -96,7 +96,7 @@ jobs:
           path: |
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
-          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
+          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: tfstate-rds-${{ inputs.environment_name }}-
       - name: "📝 06 · Escrever variáveis do Terraform"
         run: |
@@ -161,7 +161,7 @@ jobs:
           path: |
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
-          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
+          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: tfstate-rds-${{ inputs.environment_name }}-
       - name: "📝 05 · Escrever variáveis do Terraform"
         run: |
@@ -185,7 +185,7 @@ jobs:
           path: |
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
-          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
+          key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: "🔎 10 · Validar RDS real após apply"
         if: env.TERRAFORM_ACTION == 'apply'
         run: |
@@ -209,8 +209,14 @@ jobs:
           fi
           for parameter_name in "$SSM_RDS_PREFIX/endpoint" "$SSM_RDS_PREFIX/security_group_id" "$SSM_RDS_STATUS_PARAMETER"; do
             if output="$(aws ssm get-parameter --name "$parameter_name" 2>&1)"; then
-              echo "::error::O parâmetro $parameter_name ainda existe."
-              exit 1
+              aws ssm delete-parameter --name "$parameter_name"
+              if output="$(aws ssm get-parameter --name "$parameter_name" 2>&1)"; then
+                echo "::error::O parâmetro $parameter_name ainda existe após a limpeza."
+                exit 1
+              elif [[ "$output" != *"(ParameterNotFound)"* ]]; then
+                echo "$output" >&2
+                exit 1
+              fi
             elif [[ "$output" != *"(ParameterNotFound)"* ]]; then
               echo "$output" >&2
               exit 1
