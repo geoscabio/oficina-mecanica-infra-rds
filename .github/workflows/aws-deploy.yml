@@ -90,7 +90,7 @@ jobs:
           test "$(aws ssm get-parameter --name "$SSM_VPC_STATUS_PARAMETER" --query 'Parameter.Value' --output text)" = "ready" || { echo "::error::A VPC não está pronta."; exit 1; }
           test -n "$(aws ssm get-parameter --name "$SSM_VPC_PREFIX/vpc_id" --query 'Parameter.Value' --output text)"
           test -n "$(aws ssm get-parameter --name "$SSM_VPC_PREFIX/private_subnet_ids" --query 'Parameter.Value' --output text)"
-      - name: "📦 05 · Restaurar state Terraform"
+      - name: "📦 05 · Restaurar cache do state Terraform"
         uses: actions/cache/restore@v6
         with:
           path: |
@@ -98,15 +98,15 @@ jobs:
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
           key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
           restore-keys: tfstate-rds-${{ inputs.environment_name }}-
-      - name: "📝 06 · Escrever variáveis efêmeras"
+      - name: "📝 06 · Escrever variáveis do Terraform"
         run: |
           umask 077
           jq -n --arg aws_region "$AWS_REGION" --arg db_username "$DB_USERNAME" --arg db_password "$DB_PASSWORD" '{aws_region:$aws_region,db_username:$db_username,db_password:$db_password}' > "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"
-      - name: "🚀 07 · Inicializar e validar Terraform"
-        run: |
-          terraform -chdir="$TF_WORKING_DIRECTORY" init -input=false
-          terraform -chdir="$TF_WORKING_DIRECTORY" validate
-      - name: "🛡️ 08 · Capturar RDS antes do destroy"
+      - name: "🚀 07 · Inicializar Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -input=false
+      - name: "🔍 08 · Validar configuração Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" validate
+      - name: "🛡️ 09 · Capturar RDS atual antes do destroy"
         id: destroy_context
         if: env.TERRAFORM_ACTION == 'destroy'
         run: |
@@ -117,14 +117,14 @@ jobs:
           fi
           test -n "$identifier" || { echo "::error::Identificador do RDS não encontrado."; exit 1; }
           echo "db_identifier=$identifier" >> "$GITHUB_OUTPUT"
-      - name: "📐 09 · Apresentar prévia (não é o plano aplicado)"
+      - name: "📐 10 · Gerar prévia do Terraform"
         run: |
           if [ "$TERRAFORM_ACTION" = "destroy" ]; then
             terraform -chdir="$TF_WORKING_DIRECTORY" plan -destroy -input=false
           else
             terraform -chdir="$TF_WORKING_DIRECTORY" plan -input=false
           fi
-      - name: "🧹 10 · Remover variáveis efêmeras"
+      - name: "🧹 11 · Remover variáveis efêmeras"
         if: always()
         run: rm -f "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"
 
@@ -155,7 +155,7 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
-      - name: "📦 04 · Restaurar state Terraform"
+      - name: "📦 04 · Restaurar cache do state Terraform"
         uses: actions/cache/restore@v6
         with:
           path: |
@@ -163,20 +163,22 @@ jobs:
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
           key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
           restore-keys: tfstate-rds-${{ inputs.environment_name }}-
-      - name: "📝 05 · Escrever variáveis efêmeras"
+      - name: "📝 05 · Escrever variáveis do Terraform"
         run: |
           umask 077
           jq -n --arg aws_region "$AWS_REGION" --arg db_username "$DB_USERNAME" --arg db_password "$DB_PASSWORD" '{aws_region:$aws_region,db_username:$db_username,db_password:$db_password}' > "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"
-      - name: "🚀 06 · Inicializar, planejar e aplicar"
+      - name: "🚀 06 · Inicializar Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -input=false
+      - name: "📐 07 · Gerar plano do Terraform"
         run: |
-          terraform -chdir="$TF_WORKING_DIRECTORY" init -input=false
           if [ "$TERRAFORM_ACTION" = "destroy" ]; then
             terraform -chdir="$TF_WORKING_DIRECTORY" plan -destroy -input=false -out=tfplan
           else
             terraform -chdir="$TF_WORKING_DIRECTORY" plan -input=false -out=tfplan
           fi
-          terraform -chdir="$TF_WORKING_DIRECTORY" apply -input=false -auto-approve tfplan
-      - name: "💾 07 · Salvar state Terraform"
+      - name: "✅ 08 · Aplicar plano do Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" apply -input=false -auto-approve tfplan
+      - name: "💾 09 · Salvar cache final do state Terraform"
         if: always()
         uses: actions/cache/save@v6
         with:
@@ -184,7 +186,7 @@ jobs:
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
           key: tfstate-rds-${{ inputs.environment_name }}-${{ github.run_id }}
-      - name: "🔎 08 · Validar RDS e SSM após apply"
+      - name: "🔎 10 · Validar RDS real após apply"
         if: env.TERRAFORM_ACTION == 'apply'
         run: |
           identifier="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw rds_identifier)"
@@ -193,7 +195,7 @@ jobs:
           test "$(aws rds describe-db-instances --db-instance-identifier "$identifier" --query 'DBInstances[0].Endpoint.Address' --output text)" = "$endpoint"
           test "$(aws ssm get-parameter --name "$SSM_RDS_PREFIX/endpoint" --query 'Parameter.Value' --output text)" = "$endpoint"
           test "$(aws ssm get-parameter --name "$SSM_RDS_STATUS_PARAMETER" --query 'Parameter.Value' --output text)" = "ready"
-      - name: "🔎 08 · Validar remoção real após destroy"
+      - name: "🔎 10 · Validar remoção real após destroy"
         if: env.TERRAFORM_ACTION == 'destroy'
         run: |
           set -euo pipefail
@@ -214,6 +216,6 @@ jobs:
               exit 1
             fi
           done
-      - name: "🧹 09 · Remover variáveis efêmeras"
+      - name: "🧹 11 · Remover variáveis efêmeras"
         if: always()
         run: rm -f "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"
