@@ -13,6 +13,13 @@ resource "aws_ssm_parameter" "security_group_id" {
   tags        = local.common_tags
 }
 resource "aws_ssm_parameter" "status" {
+  # Publicar ready somente após concluir a infraestrutura e seus contratos SSM.
+  depends_on = [
+    aws_db_instance.this,
+    aws_ssm_parameter.endpoint,
+    aws_ssm_parameter.security_group_id,
+  ]
+
   name        = "/oficina-mecanica/development/status/rds"
   description = "Status operacional da infraestrutura RDS compartilhada."
   type        = "String"
