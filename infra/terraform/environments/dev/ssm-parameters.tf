@@ -12,12 +12,21 @@ resource "aws_ssm_parameter" "security_group_id" {
   value       = aws_security_group.rds.id
   tags        = local.common_tags
 }
+resource "aws_ssm_parameter" "master_secret_arn" {
+  name        = "/oficina-mecanica/development/rds/master_secret_arn"
+  description = "ARN não secreto das credenciais master gerenciadas pelo RDS no Secrets Manager."
+  type        = "String"
+  value       = aws_db_instance.this.master_user_secret[0].secret_arn
+  tags        = local.common_tags
+}
 resource "aws_ssm_parameter" "status" {
   # Publicar ready somente após concluir a infraestrutura e seus contratos SSM.
   depends_on = [
     aws_db_instance.this,
     aws_ssm_parameter.endpoint,
     aws_ssm_parameter.security_group_id,
+    aws_ssm_parameter.master_secret_arn,
+    aws_vpc_security_group_ingress_rule.eks_sql_server,
   ]
 
   name        = "/oficina-mecanica/development/status/rds"

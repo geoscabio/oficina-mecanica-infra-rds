@@ -23,12 +23,7 @@ variable "db_engine_version" {
   default = "16.00.4185.3.v1"
 }
 variable "db_username" {
-  type      = string
-  sensitive = true
-}
-variable "db_password" {
-  type      = string
-  sensitive = true
+  type = string
 }
 variable "vpc_ssm_prefix" {
   type    = string
@@ -37,4 +32,12 @@ variable "vpc_ssm_prefix" {
 variable "vpc_status_parameter_name" {
   type    = string
   default = "/oficina-mecanica/development/status/vpc"
+}
+variable "kubernetes_ssm_prefix" {
+  type    = string
+  default = "/oficina-mecanica/development/kubernetes"
+}
+variable "kubernetes_status_parameter_name" {
+  type    = string
+  default = "/oficina-mecanica/development/status/kubernetes"
 }
