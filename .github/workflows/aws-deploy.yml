@@ -183,8 +183,12 @@ jobs:
           identifier="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw rds_identifier)"
           endpoint="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw rds_endpoint)"
           master_secret_arn="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw rds_master_secret_arn)"
+          rds_security_group_id="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw rds_security_group_id)"
+          eks_cluster_security_group_id="$(aws ssm get-parameter --name "$SSM_KUBERNETES_PREFIX/cluster_security_group_id" --query 'Parameter.Value' --output text)"
           test "$(aws rds describe-db-instances --db-instance-identifier "$identifier" --query 'DBInstances[0].DBInstanceStatus' --output text)" = "available"
           test "$(aws rds describe-db-instances --db-instance-identifier "$identifier" --query 'DBInstances[0].Endpoint.Address' --output text)" = "$endpoint"
+          eks_ingress_rule_count="$(aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$rds_security_group_id" --query "length(SecurityGroupRules[?IsEgress==\`false\` && IpProtocol==\`tcp\` && FromPort==\`1433\` && ToPort==\`1433\` && ReferencedGroupInfo.GroupId==\`$eks_cluster_security_group_id\`])" --output text)"
+          test "$eks_ingress_rule_count" -ge 1
           test "$(aws ssm get-parameter --name "$SSM_RDS_PREFIX/endpoint" --query 'Parameter.Value' --output text)" = "$endpoint"
           test "$(aws ssm get-parameter --name "$SSM_RDS_PREFIX/master_secret_arn" --query 'Parameter.Value' --output text)" = "$master_secret_arn"
           test "$(aws ssm get-parameter --name "$SSM_RDS_STATUS_PARAMETER" --query 'Parameter.Value' --output text)" = "ready"

@@ -26,6 +26,7 @@ resource "aws_ssm_parameter" "status" {
     aws_ssm_parameter.endpoint,
     aws_ssm_parameter.security_group_id,
     aws_ssm_parameter.master_secret_arn,
+    aws_vpc_security_group_ingress_rule.eks_sql_server,
   ]
 
   name        = "/oficina-mecanica/development/status/rds"
