@@ -24,9 +24,7 @@ As branches protegidas são `develop`, `release`, `release/*` e `main`. A govern
 
 | Workflow | Responsabilidade |
 | --- | --- |
-| `🧪 CI Development` | Valida PR para `develop`, Git Flow e Terraform. |
-| `🔎 CI Release` | Valida PR para `release` e `release/**`. |
-| `🛡️ CI Production` | Valida PR para `main`. |
+| `🧪 CI` | Valida PRs para `develop`, `release`/`release/**` e `main`; verifica Git Flow, Terraform e quality gate. |
 | `🚀 CD Development` | Detecta mudanças de Terraform, chama o deploy AWS e pode abrir PR para release. |
 | `☁️ AWS Deploy` | Resolve `apply`/`destroy`, planeja, aplica e verifica AWS/SSM. |
 | `🔀 CD Release` | Registra o deploy lógico em homologation e pode abrir PR para main. |
