@@ -4,7 +4,7 @@ Este repositório provisiona e opera o Amazon RDS SQL Server de `development` da
 
 ## 🎯 Responsabilidades
 
-- Consumir VPC, subnets privadas e CIDRs privados publicados pela esteira VPC.
+- Consumir VPC e subnets privadas publicados pela esteira VPC, e o security group do EKS publicado pela esteira Kubernetes.
 - Criar RDS SQL Server Express, DB subnet group e security group privado.
 - Publicar endpoint, security group e status no AWS Systems Manager Parameter Store.
 - Controlar `apply` e `destroy` com plano e validação real na AWS.
@@ -41,7 +41,8 @@ Conforme [RFC-0004](https://github.com/geoscabio/oficina-mecanica-api/blob/main/
 | `/oficina-mecanica/development/status/vpc` | Deve ser `ready`. |
 | `/oficina-mecanica/development/vpc/vpc_id` | VPC do RDS. |
 | `/oficina-mecanica/development/vpc/private_subnet_ids` | DB subnet group. |
-| `/oficina-mecanica/development/vpc/private_subnet_cidrs` | Ingress privado do SQL Server. |
+| `/oficina-mecanica/development/status/kubernetes` | Deve ser `ready`. |
+| `/oficina-mecanica/development/kubernetes/cluster_security_group_id` | Source autorizado para TCP/1433. |
 
 Após `apply`, publica:
 
@@ -49,13 +50,14 @@ Após `apply`, publica:
 | --- | --- |
 | `/oficina-mecanica/development/rds/endpoint` | Endpoint não secreto do RDS. |
 | `/oficina-mecanica/development/rds/security_group_id` | Security group do banco. |
+| `/oficina-mecanica/development/rds/master_secret_arn` | ARN não secreto do secret master gerenciado pelo RDS. |
 | `/oficina-mecanica/development/status/rds` | Marca o RDS como pronto. |
 
-Credenciais de banco nunca são gravadas no SSM.
+O valor das credenciais de banco nunca é gravado no SSM. O RDS gera e gerencia a senha master no AWS Secrets Manager; somente o ARN não secreto é publicado para consumidores autorizados.
 
 ## 🔐 GitHub Environment
 
-No Environment `development`, configurar os secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `DB_USERNAME` e `DB_PASSWORD`. As variables esperadas são `AWS_REGION` (padrão `us-east-1`), `AUTO_PR_ENABLED` e `RELEASE_BRANCH` (padrão `release`).
+No Environment `development`, configurar os secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_SESSION_TOKEN`. As variables esperadas são `AWS_REGION` (padrão `us-east-1`), `DB_USERNAME`, `AUTO_PR_ENABLED` e `RELEASE_BRANCH` (padrão `release`). `DB_USERNAME` não é segredo; a senha master é gerada e gerenciada pelo RDS no Secrets Manager.
 
 ## 🧭 Controle apply/destroy
 
@@ -75,9 +77,12 @@ terraform -chdir=infra/terraform/environments/dev init -backend=false
 terraform -chdir=infra/terraform/environments/dev validate
 ```
 
-Para gerar plano, configure credenciais AWS e as variáveis `TF_VAR_db_username` e `TF_VAR_db_password`. A ordem da Fase 3 é:
+Para gerar plano, configure credenciais AWS e a variável não secreta `TF_VAR_db_username`. O RDS gerencia a senha master no Secrets Manager. A ordem da Fase 3 é:
 
 ```text
-infra-vpc -> infra-rds
-             -> infra-kubernetes -> api
+infra-vpc -> infra-kubernetes -> infra-rds -> api
 ```
+
+## ⚠️ AWS Academy
+
+O apply do RDS com credencial master gerenciada depende de `secretsmanager:CreateSecret`, `secretsmanager:TagResource` e `kms:DescribeKey`. Essas permissões serão comprovadas somente no apply controlado; se o LabRole as bloquear, a esteira deve falhar sem fazer fallback para senha em Terraform.
