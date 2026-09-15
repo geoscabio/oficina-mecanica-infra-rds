@@ -1,16 +1,40 @@
-# Oficina Mecânica — Infraestrutura RDS
+# 🗄️ Oficina Mecânica — Infraestrutura RDS
 
 Banco SQL Server privado da solução Oficina Mecânica. A visão de entrada está no
 [README da API](https://github.com/geoscabio/oficina-mecanica-api#readme).
 
-## Responsabilidade e fluxo
+---
+
+## 📌 Índice
+
+- [✨ Visão geral](#visao-geral)
+- [🏗️ Responsabilidade e fluxo](#arquitetura)
+- [🧩 Repositórios da solução](#repositorios)
+- [🔐 Pré-requisitos e configuração](#configuracao)
+- [☁️ Execução, CI/CD e deploy](#deploy)
+
+---
+
+<a id="visao-geral"></a>
+
+## ✨ Visão geral
+
+Camada de dados privada, com segredo mestre gerenciado fora do código.
+
+<a id="arquitetura"></a>
+
+## 🏗️ Responsabilidade e fluxo
 
 Este repositório provisiona o RDS, grupo de segurança, Secret do administrador
 no AWS Secrets Manager e contratos SSM. O banco permanece em sub-redes privadas.
 
 `VPC privada -> RDS SQL Server <- API, Auth Lambda e workloads autorizados`
 
-## Repositórios da solução
+---
+
+<a id="repositorios"></a>
+
+## 🧩 Repositórios da solução
 
 | Repositório | Responsabilidade |
 |---|---|
@@ -21,7 +45,11 @@ no AWS Secrets Manager e contratos SSM. O banco permanece em sub-redes privadas.
 | [RDS](https://github.com/geoscabio/oficina-mecanica-infra-rds) | SQL Server, security group e segredo mestre. |
 | [API Gateway](https://github.com/geoscabio/oficina-mecanica-infra-api-gateway) | Entrada HTTP. |
 
-## Pré-requisitos e configuração
+---
+
+<a id="configuracao"></a>
+
+## 🔐 Pré-requisitos e configuração
 
 Terraform, AWS CLI e os contratos da VPC são necessários. O cluster Kubernetes
 deve estar aplicado antes do RDS quando o workflow exigir seu security group.
@@ -41,7 +69,11 @@ Consome `/oficina-mecanica/development/status/vpc`, `/vpc/vpc_id`,
 `/rds/security_group_id`, `/rds/master_secret_arn` e
 `/oficina-mecanica/development/status/rds`.
 
-## Execução, CI/CD e deploy
+---
+
+<a id="deploy"></a>
+
+## ☁️ Execução, CI/CD e deploy
 
 O `aws-deploy.yml` mantém as ações existentes de plan/apply/destroy. No diretório
 Terraform:
