@@ -1,86 +1,61 @@
-# 🗄️ Oficina Mecânica Infra RDS
+# Oficina Mecânica — Infraestrutura RDS
 
-Este repositório provisiona e opera o Amazon RDS SQL Server de `development` da Oficina Mecânica, para a Fase 3 do Tech Challenge FIAP.
+Banco SQL Server privado da solução Oficina Mecânica. A visão de entrada está no
+[README da API](https://github.com/geoscabio/oficina-mecanica-api#readme).
 
-## 🎯 Responsabilidades
+## Responsabilidade e fluxo
 
-- Consumir VPC e subnets privadas publicados pela esteira VPC, e o security group do EKS publicado pela esteira Kubernetes.
-- Criar RDS SQL Server Express, DB subnet group e security group privado.
-- Publicar endpoint, security group e status no AWS Systems Manager Parameter Store.
-- Controlar `apply` e `destroy` com plano e validação real na AWS.
+Este repositório provisiona o RDS, grupo de segurança, Secret do administrador
+no AWS Secrets Manager e contratos SSM. O banco permanece em sub-redes privadas.
 
-## 🔀 Fluxo Git
+`VPC privada -> RDS SQL Server <- API, Auth Lambda e workloads autorizados`
 
-```text
-branch de trabalho -> PR develop -> deploy development -> PR release -> deploy homologation -> PR main -> deploy production
-```
+## Repositórios da solução
 
-As branches protegidas são `develop`, `release`, `release/*` e `main`. A governança segue as esteiras VPC e Kubernetes:
+| Repositório | Responsabilidade |
+|---|---|
+| [API](https://github.com/geoscabio/oficina-mecanica-api) | Aplicação .NET e documentação principal. |
+| [Auth Lambda](https://github.com/geoscabio/oficina-mecanica-auth-lambda) | Autenticação por documento. |
+| [VPC](https://github.com/geoscabio/oficina-mecanica-infra-vpc) | Rede base. |
+| [Kubernetes](https://github.com/geoscabio/oficina-mecanica-infra-kubernetes) | EKS e identidade de acesso dos workloads. |
+| [RDS](https://github.com/geoscabio/oficina-mecanica-infra-rds) | SQL Server, security group e segredo mestre. |
+| [API Gateway](https://github.com/geoscabio/oficina-mecanica-infra-api-gateway) | Entrada HTTP. |
 
-- **🔒 Proteção Git Flow:** PR, conversas resolvidas, bloqueio de push direto/force push/deleção, sem bypass; exige os checks `🔀 01 · Validar fluxo de branches` e `🚦 03 · Quality gate`.
-- **👥 Aprovação de PR:** uma aprovação, descarte de aprovação antiga e aprovação diferente do último autor do push.
+## Pré-requisitos e configuração
 
-## 🔁 Workflows
+Terraform, AWS CLI e os contratos da VPC são necessários. O cluster Kubernetes
+deve estar aplicado antes do RDS quando o workflow exigir seu security group.
 
-| Workflow | Responsabilidade |
-| --- | --- |
-| `🧪 CI` | Valida PRs para `develop`, `release`/`release/**` e `main`; verifica Git Flow, Terraform e quality gate. |
-| `🚀 CD Development` | Detecta mudanças de Terraform, chama o deploy AWS e pode abrir PR para release. |
-| `☁️ AWS Deploy` | Resolve `apply`/`destroy`, planeja, aplica e verifica AWS/SSM. |
-| `🔀 CD Release` | Registra o deploy lógico em homologation e pode abrir PR para main. |
-| `🏁 CD Production` | Registra o deploy lógico em production. |
+| Nome | Tipo e escopo | Obrigatório | Finalidade |
+|---|---|---:|---|
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | GitHub Environment Secrets (`development`) | Sim | Credenciais AWS. |
+| `AWS_SESSION_TOKEN` | GitHub Environment Secret (`development`) | Quando temporário | Sessão AWS. |
+| `AWS_REGION` | GitHub Variable | Sim | Região AWS. |
+| `DB_USERNAME` | GitHub Variable | Sim | Usuário mestre inicial do RDS. |
+| `AUTO_PR_ENABLED`, `RELEASE_BRANCH` | GitHub Variables | Não | Promoção. |
+| Credencial mestre | AWS Secrets Manager, conta AWS | Gerada pelo Terraform | Senha não versionada; apenas o ARN é publicado. |
 
-## 🌐 Contrato entre esteiras
+Consome `/oficina-mecanica/development/status/vpc`, `/vpc/vpc_id`,
+`/vpc/private_subnet_ids`, `/status/kubernetes` e
+`/kubernetes/cluster_security_group_id`. Publica `/rds/endpoint`,
+`/rds/security_group_id`, `/rds/master_secret_arn` e
+`/oficina-mecanica/development/status/rds`.
 
-Conforme [RFC-0004](https://github.com/geoscabio/oficina-mecanica-api/blob/main/docs/architecture/rfcs/rfc-0004-compartilhamento-de-outputs-entre-esteiras-via-aws-systems-manager-parameter-store.md) e [ADR-0022](https://github.com/geoscabio/oficina-mecanica-api/blob/main/docs/architecture/adrs/adr-0022-uso-do-aws-systems-manager-parameter-store-para-compartilhamento-de-outputs-entre-esteiras.md), esta esteira consome:
+## Execução, CI/CD e deploy
 
-| Parâmetro SSM | Uso |
-| --- | --- |
-| `/oficina-mecanica/development/status/vpc` | Deve ser `ready`. |
-| `/oficina-mecanica/development/vpc/vpc_id` | VPC do RDS. |
-| `/oficina-mecanica/development/vpc/private_subnet_ids` | DB subnet group. |
-| `/oficina-mecanica/development/status/kubernetes` | Deve ser `ready`. |
-| `/oficina-mecanica/development/kubernetes/cluster_security_group_id` | Source autorizado para TCP/1433. |
-
-Após `apply`, publica:
-
-| Parâmetro SSM | Uso |
-| --- | --- |
-| `/oficina-mecanica/development/rds/endpoint` | Endpoint não secreto do RDS. |
-| `/oficina-mecanica/development/rds/security_group_id` | Security group do banco. |
-| `/oficina-mecanica/development/rds/master_secret_arn` | ARN não secreto do secret master gerenciado pelo RDS. |
-| `/oficina-mecanica/development/status/rds` | Marca o RDS como pronto. |
-
-O valor das credenciais de banco nunca é gravado no SSM. O RDS gera e gerencia a senha master no AWS Secrets Manager; somente o ARN não secreto é publicado para consumidores autorizados.
-
-## 🔐 GitHub Environment
-
-No Environment `development`, configurar os secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_SESSION_TOKEN`. As variables esperadas são `AWS_REGION` (padrão `us-east-1`), `DB_USERNAME`, `AUTO_PR_ENABLED` e `RELEASE_BRANCH` (padrão `release`). `DB_USERNAME` não é segredo; a senha master é gerada e gerenciada pelo RDS no Secrets Manager.
-
-## 🧭 Controle apply/destroy
-
-O arquivo `infra/terraform/environments/dev/terraform-action.env` controla a ação:
-
-```env
-TERRAFORM_ACTION=apply
-```
-
-Para destruir, altere-o explicitamente para `destroy` em um PR dedicado. O workflow recusa destroy se esse arquivo não mudou no mesmo push.
-
-## 🧪 Validação local
+O `aws-deploy.yml` mantém as ações existentes de plan/apply/destroy. No diretório
+Terraform:
 
 ```powershell
-terraform fmt -check -recursive infra/terraform
-terraform -chdir=infra/terraform/environments/dev init -backend=false
-terraform -chdir=infra/terraform/environments/dev validate
+terraform fmt -check
+terraform validate
+terraform plan
 ```
 
-Para gerar plano, configure credenciais AWS e a variável não secreta `TF_VAR_db_username`. O RDS gerencia a senha master no Secrets Manager. A ordem da Fase 3 é:
+Use o endpoint e o ARN publicados em SSM; não copie a senha para `tfvars`, código
+ou GitHub Secrets. Métricas e logs são nativos AWS neste repositório; Datadog não
+é configurado aqui. Valide também `git diff --check` e os checks do workflow.
 
-```text
-infra-vpc -> infra-kubernetes -> infra-rds -> api
-```
-
-## ⚠️ AWS Academy
-
-O apply do RDS com credencial master gerenciada depende de `secretsmanager:CreateSecret`, `secretsmanager:TagResource` e `kms:DescribeKey`. Essas permissões serão comprovadas somente no apply controlado; se o LabRole as bloquear, a esteira deve falhar sem fazer fallback para senha em Terraform.
+Documentação: [API principal](https://github.com/geoscabio/oficina-mecanica-api#readme),
+[Amazon RDS](https://docs.aws.amazon.com/AmazonRDS/) e
+[AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/).
